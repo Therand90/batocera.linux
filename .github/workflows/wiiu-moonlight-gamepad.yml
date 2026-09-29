@@ -144,25 +144,28 @@ jobs:
           p = root / "app/src/main/java/com/limelight/Game.java"
           s = p.read_text()
 
-          old = '''                // TODO: Re-enable native touch when have a better solution for handling
-                  // cancelled touches from Android gestures and 3 finger taps to activate
-                  // the software keyboard.
-                  /*if (!prefConfig.touchscreenTrackpad && trySendTouchEvent(view, event)) {
-                      // If this host supports touch events and absolute touch is enabled,
-                      // send it directly as a touch event.
-                      return true;
-                  }*/'''
+          pattern = re.compile(
+              r'// TODO: Re-enable native touch when have a better solution for handling\s*'
+              r'// cancelled touches from Android gestures and 3 finger taps to activate\s*'
+              r'// the software keyboard\.\s*'
+              r'/\*if \(!prefConfig\.touchscreenTrackpad && trySendTouchEvent\(view, event\)\) \{\s*'
+              r'// If this host supports touch events and absolute touch is enabled,\s*'
+              r'// send it directly as a touch event\.\s*'
+              r'return true;\s*'
+              r'\}\*/',
+              re.S,
+          )
 
-          new = '''                // Wii U GamePad mode: prefer native touch packets.
+          replacement = '''// Wii U GamePad mode: prefer native touch packets.
                   // If the host doesn't advertise native touch support, Moonlight falls
                   // through to the absolute-mouse compatibility path below.
                   if (!prefConfig.touchscreenTrackpad && trySendTouchEvent(view, event)) {
                       return true;
                   }'''
 
-          if old not in s:
-              raise SystemExit("native touch block not found")
-          s = s.replace(old, new, 1)
+          s, count = pattern.subn(replacement, s, count=1)
+          if count != 1:
+              raise SystemExit("native touch block patch failed")
           p.write_text(s)
 
           # 5) Add a safe bezel around the stream so Wii U edge gestures start
