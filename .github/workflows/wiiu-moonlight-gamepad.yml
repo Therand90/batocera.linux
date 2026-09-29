@@ -28,13 +28,26 @@ jobs:
 
       - name: Install required Android SDK components
         run: |
-          SDKMANAGER="/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager"
+          SDKROOT="/usr/local/lib/android/sdk"
+          SDKMANAGER="$SDKROOT/cmdline-tools/latest/bin/sdkmanager"
           test -x "$SDKMANAGER"
+
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-          "$SDKMANAGER" \
-            "platforms;android-37" \
+
+          "$SDKMANAGER" --channel=3 \
+            "platforms;android-37.0" \
             "build-tools;37.0.0" \
             "ndk;29.0.14206865"
+
+          # compileSdk 37 is resolved by AGP as android-37, while Google's
+          # current SDK package is installed as android-37.0.
+          # Provide the compatibility alias expected by AGP.
+          if [ -d "$SDKROOT/platforms/android-37.0" ] && [ ! -e "$SDKROOT/platforms/android-37" ]; then
+            ln -s "$SDKROOT/platforms/android-37.0" "$SDKROOT/platforms/android-37"
+          fi
+
+          echo "===== Android platforms ====="
+          ls -ld "$SDKROOT/platforms/android-37" "$SDKROOT/platforms/android-37.0"
 
       - name: Patch Moonlight for Wii U GamePad
         run: |
