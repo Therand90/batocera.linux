@@ -20,6 +20,9 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Clone Moonlight Android
         run: |
           git clone --depth 1 --recursive https://github.com/moonlight-stream/moonlight-android.git moonlight
@@ -28,8 +31,8 @@ jobs:
 
       - name: Install required Android SDK components
         run: |
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platforms;android-37" "build-tools;37.0.0" "ndk;29.0.14206865"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"             "platforms;android-37"             "build-tools;37.0.0"             "ndk;29.0.14206865"
 
       - name: Patch Moonlight for Wii U GamePad
         run: |
