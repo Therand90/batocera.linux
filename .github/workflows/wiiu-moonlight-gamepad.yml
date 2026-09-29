@@ -175,31 +175,33 @@ jobs:
           p = root / "app/src/main/java/com/limelight/Game.java"
           s = p.read_text()
 
-          old = '''        streamView.setOnGenericMotionListener(this);
-        streamView.setOnKeyListener(this);
-        streamView.setInputCallbacks(this);
+          old = (
+              '        streamView.setOnGenericMotionListener(this);\n'
+              '        streamView.setOnKeyListener(this);\n'
+              '        streamView.setInputCallbacks(this);\n'
+              '\n'
+              '        // Listen for touch events on the background touch view to enable trackpad mode\n'
+              '        // to work on areas outside of the StreamView itself. We use a separate View\n'
+              '        // for this rather than just handling it at the Activity level, because that\n'
+              '        // allows proper touch splitting, which the OSC relies upon.\n'
+              '        View backgroundTouchView = findViewById(R.id.backgroundTouchView);\n'
+              '        backgroundTouchView.setOnTouchListener(this);'
+          )
 
-        // Listen for touch events on the background touch view to enable trackpad mode
-        // to work on areas outside of the StreamView itself. We use a separate View
-        // for this rather than just handling it at the Activity level, because that
-        // allows proper touch splitting, which the OSC relies upon.
-        View backgroundTouchView = findViewById(R.id.backgroundTouchView);
-        backgroundTouchView.setOnTouchListener(this);'''
-
-          new = '''        streamView.setOnGenericMotionListener(this);
-        streamView.setOnKeyListener(this);
-        streamView.setInputCallbacks(this);
-
-        // Wii U GamePad mode: in direct-touch mode, receive touch events directly
-        // from the video surface so coordinates are already local to StreamView.
-        streamView.setOnTouchListener(this);
-
-        // Keep the upstream background listener only for trackpad mode, where touches
-        // outside the video surface are intentionally useful.
-        View backgroundTouchView = findViewById(R.id.backgroundTouchView);
-        if (prefConfig.touchscreenTrackpad) {
-            backgroundTouchView.setOnTouchListener(this);
-        }'''
+          new = (
+              '        streamView.setOnGenericMotionListener(this);\n'
+              '        streamView.setOnKeyListener(this);\n'
+              '        streamView.setInputCallbacks(this);\n'
+              '\n'
+              '        // Wii U GamePad mode: direct touch coordinates are local to the video surface.\n'
+              '        streamView.setOnTouchListener(this);\n'
+              '\n'
+              '        // Preserve upstream background handling only for trackpad mode.\n'
+              '        View backgroundTouchView = findViewById(R.id.backgroundTouchView);\n'
+              '        if (prefConfig.touchscreenTrackpad) {\n'
+              '            backgroundTouchView.setOnTouchListener(this);\n'
+              '        }'
+          )
 
           if old not in s:
               raise SystemExit("StreamView/background touch listener block not found")
