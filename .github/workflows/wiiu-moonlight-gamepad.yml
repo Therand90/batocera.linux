@@ -53,6 +53,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           root = Path("moonlight")
 
@@ -60,37 +61,41 @@ jobs:
           p = root / "app/build.gradle"
           s = p.read_text()
 
-          old = '''        nonRoot {
-              externalNativeBuild {'''
-          if old not in s:
-              raise SystemExit("nonRoot flavor not found")
-
-          # Only the nonRoot applicationId is replaced.
-          target = '            applicationId "com.limelight"'
-          if target not in s:
-              raise SystemExit("nonRoot applicationId not found")
-          s = s.replace(target, '            applicationId "com.therand.wiiugamepad"', 1)
-
-          s = s.replace(
-              'resValue "string", "app_label", "Moonlight (Debug)"',
-              'resValue "string", "app_label", "Moonlight WiiU"',
-              1,
+          s, count = re.subn(
+              r'(nonRoot\s*\{.*?applicationId\s+)"com\.limelight"',
+              r'\1"com.therand.wiiugamepad"',
+              s,
+              count=1,
+              flags=re.S,
           )
+          if count != 1:
+              raise SystemExit("nonRoot applicationId patch failed")
+
+          s, count = re.subn(
+              r'resValue\s+"string",\s*"app_label",\s*"Moonlight \(Debug\)"',
+              'resValue "string", "app_label", "Moonlight WiiU"',
+              s,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("debug app label patch failed")
+
           p.write_text(s)
 
           # 2) Sensible defaults for this dedicated GamePad client.
           p = root / "app/src/main/java/com/limelight/preferences/PreferenceConfiguration.java"
           s = p.read_text()
-          s = s.replace(
-              "private static final boolean DEFAULT_HOST_AUDIO = false;",
-              "private static final boolean DEFAULT_HOST_AUDIO = true;",
-              1,
-          )
-          s = s.replace(
-              "private static final boolean DEFAULT_TOUCHSCREEN_TRACKPAD = true;",
-              "private static final boolean DEFAULT_TOUCHSCREEN_TRACKPAD = false;",
-              1,
-          )
+
+          old = "private static final boolean DEFAULT_HOST_AUDIO = false;"
+          if old not in s:
+              raise SystemExit("DEFAULT_HOST_AUDIO not found")
+          s = s.replace(old, "private static final boolean DEFAULT_HOST_AUDIO = true;", 1)
+
+          old = "private static final boolean DEFAULT_TOUCHSCREEN_TRACKPAD = true;"
+          if old not in s:
+              raise SystemExit("DEFAULT_TOUCHSCREEN_TRACKPAD not found")
+          s = s.replace(old, "private static final boolean DEFAULT_TOUCHSCREEN_TRACKPAD = false;", 1)
+
           p.write_text(s)
 
           # 3) Make absolute finger input act like a real touchscreen:
@@ -98,69 +103,53 @@ jobs:
           p = root / "app/src/main/java/com/limelight/binding/input/touch/AbsoluteTouchContext.java"
           s = p.read_text()
 
-          old = '''        if (actionIndex == 0) {
-              // Start the timers
-              startTapDownTimer();
-              startLongPressTimer();
-          }'''
+          pattern = re.compile(
+              r'if \(actionIndex == 0\) \{\s*'
+              r'// Start the timers\s*'
+              r'startTapDownTimer\(\);\s*'
+              r'startLongPressTimer\(\);\s*'
+              r'\}',
+              re.S,
+          )
 
-          new = '''        if (actionIndex == 0) {
-              // Wii U GamePad mode: treat a finger like direct resistive touch.
-              // Press immediately and keep the left button held during movement.
+          replacement = '''if (actionIndex == 0) {
+              // Wii U GamePad mode: direct touch semantics.
               updatePosition(eventX, eventY);
               confirmedTap = true;
               conn.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT);
           }'''
 
-          if old not in s:
-              raise SystemExit("AbsoluteTouchContext touch-down block not found")
+          s, count = pattern.subn(replacement, s, count=1)
+          if count != 1:
+              raise SystemExit("AbsoluteTouchContext touch-down patch failed")
 
-          s = s.replace(old, new, 1)
           p.write_text(s)
 
-          # 4) Add a small visible "GamePad bezel" around the video.
-          # This moves the virtual top/bottom/side edges away from Android's
-          # notification/home/back gesture zones. Touch coordinates remain
-          # relative to the StreamView, so the inner image edge is Wii U x/y=0/max.
+          # 4) Add a safe bezel around the stream so Wii U edge gestures start
+          # away from Android's notification/home/back gesture zones.
           p = root / "app/src/main/res/layout/activity_game.xml"
           s = p.read_text()
 
-          old = '''    <com.limelight.ui.StreamView
-              android:id="@+id/surfaceView"
-              android:layout_width="match_parent"
-              android:layout_height="match_parent"
-              android:layout_gravity="center"'''
-
-          new = '''    <com.limelight.ui.StreamView
-              android:id="@+id/surfaceView"
-              android:layout_width="match_parent"
-              android:layout_height="match_parent"
-              android:layout_gravity="center"
+          marker = '        android:layout_gravity="center"\n        android:focusable="true"'
+          replacement = '''        android:layout_gravity="center"
               android:layout_marginStart="16dp"
               android:layout_marginEnd="16dp"
               android:layout_marginTop="24dp"
-              android:layout_marginBottom="24dp"'''
+              android:layout_marginBottom="24dp"
+              android:focusable="true"'''
 
-          if old not in s:
-              raise SystemExit("StreamView layout block not found")
+          if marker not in s:
+              raise SystemExit("StreamView insertion point not found")
+          s = s.replace(marker, replacement, 1)
 
-          s = s.replace(old, new, 1)
-
-          # Make the safe bezel explicitly black.
-          bg = '''    <View
-              android:id="@+id/backgroundTouchView"
-              android:layout_width="match_parent"
-              android:layout_height="match_parent"
-              android:layout_gravity="center" />'''
-          bg_new = '''    <View
-              android:id="@+id/backgroundTouchView"
-              android:layout_width="match_parent"
-              android:layout_height="match_parent"
+          bg_marker = '        android:layout_height="match_parent"\n        android:layout_gravity="center" />'
+          bg_replacement = '''        android:layout_height="match_parent"
               android:layout_gravity="center"
               android:background="#000000" />'''
-          if bg not in s:
-              raise SystemExit("backgroundTouchView block not found")
-          s = s.replace(bg, bg_new, 1)
+
+          if bg_marker not in s:
+              raise SystemExit("backgroundTouchView insertion point not found")
+          s = s.replace(bg_marker, bg_replacement, 1)
 
           p.write_text(s)
 
