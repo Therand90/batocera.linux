@@ -98,6 +98,18 @@ jobs:
 
           p.write_text(s)
 
+          # Keep the settings UI default in sync too.
+          p = root / "app/src/main/res/xml/preferences.xml"
+          s = p.read_text()
+          pattern = re.compile(
+              r'(android:key="checkbox_touchscreen_trackpad".*?android:defaultValue=")true(")',
+              re.S,
+          )
+          s, count = pattern.subn(r'\1false\2', s, count=1)
+          if count != 1:
+              raise SystemExit("touchscreen trackpad XML default patch failed")
+          p.write_text(s)
+
           # 3) Make absolute finger input act like a real touchscreen:
           # DOWN immediately, MOVE while held, UP immediately.
           p = root / "app/src/main/java/com/limelight/binding/input/touch/AbsoluteTouchContext.java"
@@ -125,7 +137,35 @@ jobs:
 
           p.write_text(s)
 
-          # 4) Add a safe bezel around the stream so Wii U edge gestures start
+          # 4) Re-enable Moonlight's native touch packet path for direct-touch mode.
+          # Upstream currently leaves this disabled because Android edge gestures can
+          # cancel touches. Our Wii U build uses a safe bezel specifically to avoid
+          # those edge zones, and Sunshine/Cemu can consume native touch/pan events.
+          p = root / "app/src/main/java/com/limelight/Game.java"
+          s = p.read_text()
+
+          old = '''                // TODO: Re-enable native touch when have a better solution for handling
+                  // cancelled touches from Android gestures and 3 finger taps to activate
+                  // the software keyboard.
+                  /*if (!prefConfig.touchscreenTrackpad && trySendTouchEvent(view, event)) {
+                      // If this host supports touch events and absolute touch is enabled,
+                      // send it directly as a touch event.
+                      return true;
+                  }*/'''
+
+          new = '''                // Wii U GamePad mode: prefer native touch packets.
+                  // If the host doesn't advertise native touch support, Moonlight falls
+                  // through to the absolute-mouse compatibility path below.
+                  if (!prefConfig.touchscreenTrackpad && trySendTouchEvent(view, event)) {
+                      return true;
+                  }'''
+
+          if old not in s:
+              raise SystemExit("native touch block not found")
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          # 5) Add a safe bezel around the stream so Wii U edge gestures start
           # away from Android's notification/home/back gesture zones.
           p = root / "app/src/main/res/layout/activity_game.xml"
           s = p.read_text()
@@ -158,7 +198,17 @@ jobs:
 
       - name: Show patch diff
         working-directory: moonlight
-        run: git diff -- app/build.gradle app/src/main/java/com/limelight/preferences/PreferenceConfiguration.java app/src/main/java/com/limelight/binding/input/touch/AbsoluteTouchContext.java app/src/main/res/layout/activity_game.xml
+        run: git diff -- app/build.gradle app/src/main/java/com/limelight/preferences/PreferenceConfiguration.java app/src/main/res/xml/preferences.xml app/src/main/java/com/limelight/binding/input/touch/AbsoluteTouchContext.java app/src/main/java/com/limelight/Game.java app/src/main/res/layout/activity_game.xml
+
+      - name: Prepare stable debug signing key
+        run: |
+          mkdir -p "$HOME/.android"
+          cat > "$HOME/.android/debug.keystore.b64" <<'EOF'
+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
+EOF
+          base64 -d "$HOME/.android/debug.keystore.b64" > "$HOME/.android/debug.keystore"
+          rm "$HOME/.android/debug.keystore.b64"
+          chmod 600 "$HOME/.android/debug.keystore"
 
       - name: Build signed debug APK
         working-directory: moonlight
